@@ -1,0 +1,16 @@
+[build-system]
+requires    = ["scikit-build-core", "pybind11"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name         = "syclnn"
+version      = "0.1.0"
+description  = "SYCL-accelerated feed-forward neural network library"
+license      = "LGPL-3.0-only"
+readme       = "README.md"
+dependencies = []
+authors = [ { name="Antonio Napolitano", email="anton@polit.no" },
+            { name="Suqi Chen", email="sypeeoui@gmail.com" } ]
+
+[tool.scikit-build]
+wheel.packages = ["python/syclnn"]
