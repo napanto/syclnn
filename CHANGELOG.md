@@ -12,6 +12,9 @@ always reachable (the switch that restores it is given in brackets).
 
 ### Added
 
+- `Options.blas = "tiled"`: hand-written BLAS (a 16x16 tiled GEMM with local memory (nd_range),
+  a row-per-work-item GEMV, reductions for asum/nrm2) for the "same kernel in
+  the three programming models" comparison (E7 of the study).
 - `Options` (device selection, BLAS backend selection, profiling, ablation
   switches) passed to every constructor; `Network::options()` reports it.
 - Run-time device selection (`Options::device`: `default`, `cpu`, `gpu`,
