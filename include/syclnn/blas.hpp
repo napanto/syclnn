@@ -114,20 +114,23 @@ inline sycl::event gemm(sycl::queue &q, bool ta, bool tb, std::int64_t m, std::i
     const std::size_t gm = std::size_t((m + TILE - 1) / TILE) * TILE, gn = std::size_t((n + TILE - 1) / TILE) * TILE;
     return q.submit([&](sycl::handler &h) {
         h.depends_on(deps);
-        sycl::local_accessor<T, 2> As(sycl::range<2>(TILE, TILE), h), Bs(sycl::range<2>(TILE, TILE), h);
+        // the op(A) tile is stored transposed (AsT[kk][li]): the fast work-item index li then
+        // walks consecutive local-memory words in both the stores and the inner-loop loads
+        // (As[li][kk] would be a stride-16 bank conflict); Bs[kk][lj] is a broadcast
+        sycl::local_accessor<T, 2> AsT(sycl::range<2>(TILE, TILE), h), Bs(sycl::range<2>(TILE, TILE), h);
         h.parallel_for(sycl::nd_range<2>(sycl::range<2>(gn, gm), sycl::range<2>(TILE, TILE)), [=](sycl::nd_item<2> it) {
             const int lj = int(it.get_local_id(0)), li = int(it.get_local_id(1));
             const std::int64_t j = std::int64_t(it.get_global_id(0)), i = std::int64_t(it.get_global_id(1));
             T acc = T(0);
             for (std::int64_t t = 0; t < k; t += TILE) {
                 std::int64_t p = t + lj;
-                As[li][lj] = (i < m && p < k) ? (ta ? A[p + i * lda] : A[i + p * lda]) : T(0);
+                AsT[lj][li] = (i < m && p < k) ? (ta ? A[p + i * lda] : A[i + p * lda]) : T(0);
                 p = t + li;
                 Bs[li][lj] = (p < k && j < n) ? (tb ? B[j + p * ldb] : B[p + j * ldb]) : T(0);
-                it.barrier(sycl::access::fence_space::local_space);
+                sycl::group_barrier(it.get_group());
                 for (int kk = 0; kk < TILE; ++kk)
-                    acc += As[li][kk] * Bs[kk][lj];
-                it.barrier(sycl::access::fence_space::local_space);
+                    acc += AsT[kk][li] * Bs[kk][lj];
+                sycl::group_barrier(it.get_group());
             }
             if (i < m && j < n) {
                 T *c = C + i + j * ldc;
@@ -156,13 +159,12 @@ inline sycl::event gemv(sycl::queue &q, bool ta, std::int64_t m, std::int64_t n,
 /// result = sum |x| (abs) or sqrt(sum x^2) (!abs)
 template <typename T>
 inline sycl::event reduce(sycl::queue &q, bool abs, std::int64_t n, const T *x, T *result, const std::vector<sycl::event> &deps) {
-    auto fill = q.submit([&](sycl::handler &h) {
-        h.depends_on(deps);
-        h.single_task([=] { *result = T(0); });
-    });
+    // initialize_to_identity: the reduction overwrites *result, no zero-fill kernel
     auto red = q.submit([&](sycl::handler &h) {
-        h.depends_on(fill);
-        h.parallel_for(sycl::range<1>(std::size_t(n)), sycl::reduction(result, sycl::plus<T>()), [=](sycl::item<1> it, auto &sum) {
+        h.depends_on(deps);
+        h.parallel_for(sycl::range<1>(std::size_t(n)),
+                       sycl::reduction(result, sycl::plus<T>(), sycl::property::reduction::initialize_to_identity{}),
+                       [=](sycl::item<1> it, auto &sum) {
             const T v = x[it.get_id(0)];
             sum += abs ? (v < T(0) ? -v : v) : v * v;
         });
@@ -222,7 +224,8 @@ template <typename Fn> inline sycl::event with_backend(BlasBackend b, sycl::queu
 #else
         not_compiled(b);
 #endif
-    case BlasBackend::Tiled: break; // handled by the caller
+    case BlasBackend::Tiled:
+        throw std::logic_error("syclnn: the tiled BLAS is dispatched by Blas, not by oneMath");
     }
     not_compiled(b);
 }
@@ -274,8 +277,11 @@ class Blas {
     sycl::event gemv(sycl::queue &q, transpose ta, std::int64_t m, std::int64_t n, T alpha, const T *a, std::int64_t lda,
                      const T *x, std::int64_t incx, T beta, T *y, std::int64_t incy,
                      const std::vector<sycl::event> &deps = {}) const {
-        if (m_backend == BlasBackend::Tiled)
+        if (m_backend == BlasBackend::Tiled) {
+            if (incx != 1 || incy != 1)
+                throw std::invalid_argument("syclnn: the tiled BLAS supports unit strides only");
             return handwritten::gemv(q, ta == T_, m, n, alpha, a, lda, x, beta, y, deps);
+        }
         return detail::with_backend(m_backend, q, [&](auto sel) {
             return oneapi::math::blas::column_major::gemv(sel, ta, m, n, alpha, a, lda, x, incx, beta, y, incy, deps);
         });
@@ -284,8 +290,11 @@ class Blas {
     template <typename T>
     sycl::event asum(sycl::queue &q, std::int64_t n, const T *x, std::int64_t incx, T *result,
                      const std::vector<sycl::event> &deps = {}) const {
-        if (m_backend == BlasBackend::Tiled)
+        if (m_backend == BlasBackend::Tiled) {
+            if (incx != 1)
+                throw std::invalid_argument("syclnn: the tiled BLAS supports unit strides only");
             return handwritten::reduce(q, true, n, x, result, deps);
+        }
         return detail::with_backend(m_backend, q, [&](auto sel) {
             return oneapi::math::blas::column_major::asum(sel, n, x, incx, result, deps);
         });
@@ -294,8 +303,11 @@ class Blas {
     template <typename T>
     sycl::event nrm2(sycl::queue &q, std::int64_t n, const T *x, std::int64_t incx, T *result,
                      const std::vector<sycl::event> &deps = {}) const {
-        if (m_backend == BlasBackend::Tiled)
+        if (m_backend == BlasBackend::Tiled) {
+            if (incx != 1)
+                throw std::invalid_argument("syclnn: the tiled BLAS supports unit strides only");
             return handwritten::reduce(q, false, n, x, result, deps);
+        }
         return detail::with_backend(m_backend, q, [&](auto sel) {
             return oneapi::math::blas::column_major::nrm2(sel, n, x, incx, result, deps);
         });
