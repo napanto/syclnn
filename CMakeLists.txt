@@ -143,6 +143,12 @@ if(SYCLNN_SYCL_IMPL STREQUAL "adaptivecpp")
   set(SYCLNN_COMPILER_ID "AdaptiveCpp ${AdaptiveCpp_VERSION} ${ACPP_COMPILER} / host ${SYCLNN_COMPILER_ID}")
 endif()
 set(SYCLNN_COMPILE_FLAGS "${_flags}")
+find_package(Git QUIET)
+set(SYCLNN_GIT_SHA "unknown")
+if(GIT_FOUND)
+  execute_process(COMMAND ${GIT_EXECUTABLE} -C ${CMAKE_CURRENT_SOURCE_DIR} describe --always --dirty --tags
+    OUTPUT_VARIABLE SYCLNN_GIT_SHA OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+endif()
 configure_file(include/syclnn/build_info.hpp.in "${CMAKE_BINARY_DIR}/generated/syclnn/build_info.hpp" @ONLY)
 target_include_directories(syclnn INTERFACE $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>)
 

@@ -43,6 +43,9 @@ using namespace syclnn;
 #ifndef SYCLNN_ONEMATH_VERSION
 #define SYCLNN_ONEMATH_VERSION ""
 #endif
+#ifndef SYCLNN_GIT_SHA
+#define SYCLNN_GIT_SHA "unknown"
+#endif
 
 namespace {
 
@@ -416,6 +419,7 @@ PYBIND11_MODULE(SYCLNN_MODULE_NAME, m) {
             d["flags"] = SYCLNN_COMPILE_FLAGS;
             d["sycl_targets"] = SYCLNN_SYCL_TARGETS;
             d["onemath"] = SYCLNN_ONEMATH_VERSION;
+            d["git_sha"] = SYCLNN_GIT_SHA;
             d["blas_backends"] = compiled_blas_backends();
             d["blas_selectable"] = selectable_blas_backends();
 #if defined(__ADAPTIVECPP__) || defined(__HIPSYCL__)
