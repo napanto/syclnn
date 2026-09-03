@@ -1,16 +1,40 @@
 [build-system]
-requires    = ["scikit-build-core", "pybind11"]
+requires = ["scikit-build-core>=1.0", "pybind11>=3.1"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name         = "syclnn"
-version      = "0.1.0"
-description  = "SYCL-accelerated feed-forward neural network library"
-license      = "LGPL-3.0-only"
-readme       = "README.md"
-dependencies = []
-authors = [ { name="Antonio Napolitano", email="anton@polit.no" },
-            { name="Suqi Chen", email="sypeeoui@gmail.com" } ]
+name = "syclnn"
+version = "0.2.0"
+description = "SYCL-accelerated feed-forward neural network library (oneMath BLAS + hand-written kernels)"
+license = "LGPL-3.0-only"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26"]
+authors = [
+  { name = "Antonio Napolitano", email = "anton@polit.no" },
+  { name = "Suqi Chen", email = "sypeeoui@gmail.com" },
+]
+classifiers = [
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/napanto/syclnn"
 
 [tool.scikit-build]
+cmake.version = ">=3.26"
+cmake.build-type = "Release"
+build-dir = "build/{wheel_tag}"
 wheel.packages = ["python/syclnn"]
+editable.mode = "redirect"
+sdist.exclude = ["build/", ".cache/", "*.so"]
+
+[tool.scikit-build.cmake.define]
+SYCLNN_TARGETS = { env = "SYCLNN_TARGETS", default = "spir64" }
+SYCLNN_ONEMATH_ROOT = { env = "SYCLNN_ONEMATH_ROOT", default = "" }
+SYCLNN_SYCL_IMPL = { env = "SYCLNN_SYCL_IMPL", default = "auto" }
+SYCLNN_ACPP_TARGETS = { env = "SYCLNN_ACPP_TARGETS", default = "generic" }
+SYCLNN_BLAS_BACKENDS = { env = "SYCLNN_BLAS_BACKENDS", default = "mklcpu;netlib" }
+SYCLNN_BUILD_BENCH = "OFF"

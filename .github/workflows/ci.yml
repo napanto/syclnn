@@ -1,0 +1,64 @@
+name: ci
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  cpu:
+    name: build + parity suite (opencl:cpu, ${{ matrix.blas }})
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/napanto/fnn-sycl:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        blas: [netlib, mklcpu]
+    steps:
+      - uses: actions/checkout@v4
+      - name: build wheel (spir64 + nvidia_gpu_sm_80; the GPU part is compile-only here)
+        run: |
+          export SYCLNN_TARGETS="spir64;nvidia_gpu_sm_80" SYCLNN_ONEMATH_ROOT=/opt/onemath CMAKE_BUILD_PARALLEL_LEVEL=4
+          pip install -v .
+      - name: install fnn-testkit
+        run: pip install "fnn-testkit @ git+https://github.com/napanto/fnn-bench#subdirectory=testkit"
+      - name: parity suite
+        run: pytest -q --device cpu --blas ${{ matrix.blas }} --junitxml=junit-${{ matrix.blas }}.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-${{ matrix.blas }}
+          path: junit-*.xml
+
+  cpp-driver:
+    name: C++ driver + ctest smoke
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/napanto/fnn-sycl:latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DSYCLNN_ONEMATH_ROOT=/opt/onemath -DSYCLNN_BUILD_PYTHON=OFF
+          cmake --build build -j4
+          cd build && ctest --output-on-failure
+      - run: ./build/train_bench --layers 64,128,10 --samples 512 --batch 64 --epochs 3 --device cpu --profile
+
+  image:
+    name: container image
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    needs: [cpu]
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          podman build -t ghcr.io/napanto/syclnn:latest -f Containerfile .
+          podman push ghcr.io/napanto/syclnn:latest
