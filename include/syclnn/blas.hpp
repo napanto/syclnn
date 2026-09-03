@@ -34,7 +34,7 @@ inline const char *blas_backend_name(BlasBackend b) {
     return "?";
 }
 
-/// Backends this build was linked against (from oneMath's config.hpp macros).
+/// Backends the oneMath build knows (run-time loader), from its config.hpp macros.
 inline std::vector<std::string> compiled_blas_backends() {
     std::vector<std::string> v;
 #ifdef ONEMATH_ENABLE_MKLCPU_BACKEND
@@ -50,6 +50,30 @@ inline std::vector<std::string> compiled_blas_backends() {
     v.push_back("cublas");
 #endif
 #ifdef ONEMATH_ENABLE_ROCBLAS_BACKEND
+    v.push_back("rocblas");
+#endif
+    return v;
+}
+
+/// Backends that Options::blas can name explicitly: those linked for oneMath's
+/// compile-time dispatch (SYCLNN_CT_BACKENDS at build time). GPU backends are
+/// normally reached through "auto" so that the module does not depend on the
+/// vendor driver library on machines without that GPU.
+inline std::vector<std::string> selectable_blas_backends() {
+    std::vector<std::string> v;
+#ifdef SYCLNN_CT_MKLCPU
+    v.push_back("mklcpu");
+#endif
+#ifdef SYCLNN_CT_NETLIB
+    v.push_back("netlib");
+#endif
+#ifdef SYCLNN_CT_GENERIC
+    v.push_back("generic");
+#endif
+#ifdef SYCLNN_CT_CUBLAS
+    v.push_back("cublas");
+#endif
+#ifdef SYCLNN_CT_ROCBLAS
     v.push_back("rocblas");
 #endif
     return v;
@@ -74,10 +98,11 @@ inline BlasBackend parse_blas_backend(const std::string &name) {
 namespace detail {
 [[noreturn]] inline void not_compiled(BlasBackend b) {
     std::string avail;
-    for (const auto &n : compiled_blas_backends())
+    for (const auto &n : selectable_blas_backends())
         avail += (avail.empty() ? "" : ", ") + n;
     throw std::invalid_argument(std::string("oneMath backend '") + blas_backend_name(b) +
-                                "' is not compiled into this build (available: " + avail + ")");
+                                "' cannot be selected in this build (selectable: auto" + (avail.empty() ? "" : ", " + avail) +
+                                "; GPU backends are reached with blas=auto)");
 }
 
 /// Invoke `fn(selector)` where selector is the queue (run-time dispatch) or a
@@ -87,31 +112,31 @@ template <typename Fn> inline sycl::event with_backend(BlasBackend b, sycl::queu
     switch (b) {
     case BlasBackend::Auto: return fn(q);
     case BlasBackend::MklCpu:
-#ifdef ONEMATH_ENABLE_MKLCPU_BACKEND
+#if defined(SYCLNN_CT_MKLCPU) && defined(ONEMATH_ENABLE_MKLCPU_BACKEND)
         return fn(om::backend_selector<om::backend::mklcpu>{q});
 #else
         not_compiled(b);
 #endif
     case BlasBackend::Netlib:
-#ifdef ONEMATH_ENABLE_NETLIB_BACKEND
+#if defined(SYCLNN_CT_NETLIB) && defined(ONEMATH_ENABLE_NETLIB_BACKEND)
         return fn(om::backend_selector<om::backend::netlib>{q});
 #else
         not_compiled(b);
 #endif
     case BlasBackend::Generic:
-#ifdef ONEMATH_ENABLE_GENERIC_BLAS_BACKEND
+#if defined(SYCLNN_CT_GENERIC) && defined(ONEMATH_ENABLE_GENERIC_BLAS_BACKEND)
         return fn(om::backend_selector<om::backend::generic>{q});
 #else
         not_compiled(b);
 #endif
     case BlasBackend::Cublas:
-#ifdef ONEMATH_ENABLE_CUBLAS_BACKEND
+#if defined(SYCLNN_CT_CUBLAS) && defined(ONEMATH_ENABLE_CUBLAS_BACKEND)
         return fn(om::backend_selector<om::backend::cublas>{q});
 #else
         not_compiled(b);
 #endif
     case BlasBackend::Rocblas:
-#ifdef ONEMATH_ENABLE_ROCBLAS_BACKEND
+#if defined(SYCLNN_CT_ROCBLAS) && defined(ONEMATH_ENABLE_ROCBLAS_BACKEND)
         return fn(om::backend_selector<om::backend::rocblas>{q});
 #else
         not_compiled(b);

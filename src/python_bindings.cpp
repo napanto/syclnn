@@ -417,6 +417,7 @@ PYBIND11_MODULE(SYCLNN_MODULE_NAME, m) {
             d["sycl_targets"] = SYCLNN_SYCL_TARGETS;
             d["onemath"] = SYCLNN_ONEMATH_VERSION;
             d["blas_backends"] = compiled_blas_backends();
+            d["blas_selectable"] = selectable_blas_backends();
 #if defined(__ADAPTIVECPP__) || defined(__HIPSYCL__)
             d["sycl_implementation"] = "AdaptiveCpp";
 #elif defined(__INTEL_LLVM_COMPILER)

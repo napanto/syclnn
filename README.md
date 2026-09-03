@@ -86,8 +86,13 @@ FetchContent build, default `mklcpu;netlib`), `SYCLNN_FAST_MATH`, `SYCLNN_BUILD_
 builds oneMath v0.9 with the backends of `SYCLNN_BLAS_BACKENDS` (slow, once).
 
 Selecting the BLAS backend at run time (`blas=mklcpu|netlib|generic`) needs the
-compile-time dispatch entry points of oneMath; with AdaptiveCpp builds use
-`blas="auto"` (the run-time loader picks NETLIB on the CPU and rocBLAS on the GPU).
+compile-time dispatch entry points of oneMath: `SYCLNN_CT_BACKENDS` (default
+`mklcpu;netlib;generic`) lists the backend libraries linked for that purpose.
+GPU backends are deliberately not linked (the module would then need
+`libcuda.so.1` / `libamdhip64.so` on machines without that GPU): `blas="auto"`
+reaches cuBLAS / rocBLAS through oneMath's run-time loader. With AdaptiveCpp
+builds also use `blas="auto"` on the CPU (the explicit NETLIB entry point fails
+to JIT there).
 
 ## Tests
 
@@ -101,11 +106,11 @@ pytest --device gpu --dtype float --blas cublas --option memory=shared
 pytest --device cpu --run-slow          # + MNIST
 ```
 
-Status (2026-09-03): the 117 tests pass in double and float on the AdaptiveCpp
-OpenMP host device (NETLIB/OpenBLAS) and on the RX 7900 XTX (AdaptiveCpp +
-rocBLAS) for every ablation switch, except `memory=host` on the AMD GPU (stale
-reads through zero-copy host memory; reported as a platform result). DPC++ runs
-on `opencl:cpu` (MKLCPU / NETLIB / generic SYCL BLAS) and on NVIDIA GPUs are
+Status (2026-09-03): the 117 tests pass in double and float on DPC++
+(intel/llvm v7.1.0) `opencl:cpu` with MKLCPU and NETLIB/OpenBLAS, on the
+AdaptiveCpp OpenMP host device and on the RX 7900 XTX (AdaptiveCpp + rocBLAS)
+for every ablation switch, except `memory=host` on the AMD GPU (stale reads
+through zero-copy host memory; reported as a platform result). NVIDIA runs are
 tracked in `fnn-bench/docs/toolchains.md`.
 
 ## Container
