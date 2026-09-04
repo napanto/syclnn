@@ -187,7 +187,7 @@ template <typename T> class Network {
     sycl::queue m_queue;
     Blas m_blas;
     Profiler m_prof;
-    static sycl::queue make_queue(const sycl::device &dev, const Options &o);
+    static sycl::queue make_queue(const sycl::device &dev, Options &o); // may rewrite o.queue (effective value)
 
     // ---- parameters and optimiser state (per weight layer) ----
     std::vector<Buf> m_W, m_b, m_mW, m_vW, m_mb, m_vb;
@@ -237,11 +237,22 @@ template <typename T> class Network {
 
 // ---------------------------------------------------------------- construction
 
-template <typename T> sycl::queue Network<T>::make_queue(const sycl::device &dev, const Options &o) {
+template <typename T> sycl::queue Network<T>::make_queue(const sycl::device &dev, Options &o) {
     auto handler = [](sycl::exception_list el) {
         for (auto &e : el)
             std::rethrow_exception(e);
     };
+#if !defined(__ADAPTIVECPP__) && !defined(__HIPSYCL__)
+    // DPC++ CUDA backend + oneMath cuBLAS: the events oneMath returns complete when its
+    // host callback returns, before the asynchronous cuBLAS work on the native stream
+    // (the backend was compiled with the host_task fallback), so with an out-of-order
+    // queue the fine-grained dependency graph races (MNIST trains to ~50 % accuracy on
+    // the GTX 1080 Ti, 2026-09-04). An in-order queue serialises everything on one
+    // stream and is correct; the hand-written BLAS does not go through oneMath.
+    if (dev.get_backend() == sycl::backend::ext_oneapi_cuda && o.queue != QueueOrder::InOrder &&
+        parse_blas_backend(o.blas) != BlasBackend::Tiled)
+        o.queue = QueueOrder::InOrder;
+#endif
     const bool in_order = o.queue == QueueOrder::InOrder;
     if (o.profile && in_order)
         return sycl::queue(dev, handler, {sycl::property::queue::enable_profiling{}, sycl::property::queue::in_order{}});

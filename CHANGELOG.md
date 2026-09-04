@@ -91,6 +91,11 @@ always reachable (the switch that restores it is given in brackets).
 
 ### Fixed
 
+- DPC++ CUDA backend: the queue is forced in-order whenever oneMath is the BLAS
+  (`Options.queue` reports the effective value). The oneMath cuBLAS backend
+  returns events that complete before its asynchronous cuBLAS work, so the
+  out-of-order dependency graph raced on the GTX 1080 Ti (MNIST accuracy
+  ~50 %); `blas=tiled` keeps the out-of-order queue.
 - USM leak of the asum/nrm2 temporaries in the regularisation penalty (allocated
   per layer per epoch, never freed).
 - Destructor could throw (`wait_and_throw`); it now swallows asynchronous errors.
