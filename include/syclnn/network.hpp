@@ -253,6 +253,11 @@ template <typename T> sycl::queue Network<T>::make_queue(const sycl::device &dev
         parse_blas_backend(o.blas) != BlasBackend::Tiled)
         o.queue = QueueOrder::InOrder;
 #endif
+    // the Intel OpenCL CPU runtime's per-submission cost grows with the number of
+    // outstanding commands (an epoch of 938 batches ran 8x slower per batch than one of
+    // 64): bound the depth on CPU devices unless the user chose a value
+    if (o.sync_every == 0 && dev.is_cpu())
+        o.sync_every = 4; // measured: 2-4 best, 8 +10 %, 32 3x, unbounded 60x at batch 64
     const bool in_order = o.queue == QueueOrder::InOrder;
     if (o.profile && in_order)
         return sycl::queue(dev, handler, {sycl::property::queue::enable_profiling{}, sycl::property::queue::in_order{}});
@@ -1068,6 +1073,8 @@ std::vector<T> Network<T>::train(const std::vector<T> &input_samples, const std:
                 }
                 chain_next = join(updates);
             }
+            if (m_opts.sync_every && (bi + 1) % m_opts.sync_every == 0 && bi + 1 < n_batches)
+                m_prof.timed_wait([&] { m_queue.wait(); }); // bounded outstanding-command depth
         }
 
         // ---- epoch end: penalty, loss readback, synchronisation ----

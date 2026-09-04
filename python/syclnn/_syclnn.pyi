@@ -279,6 +279,7 @@ class Options:
     device: str
     direct_input: bool
     fast_math: bool
+    sync_every: int
     fine_deps: bool
     host_adam_correction: bool
     join_kernels: bool

@@ -91,6 +91,11 @@ always reachable (the switch that restores it is given in brackets).
 
 ### Fixed
 
+- `Options.sync_every`: wait for the queue every N batches (0 = automatic: 4 on
+  CPU devices, never on GPUs). The Intel OpenCL CPU runtime's per-submission
+  cost grows with the outstanding commands: an MNIST epoch of 938 batches ran
+  8x slower per batch than 64 batches (157 s vs 20 s extrapolated) until the
+  depth was bounded (2.3 s with 4). `Options.queue`/`sync_every` report the effective values.
 - DPC++ CUDA backend: the queue is forced in-order whenever oneMath is the BLAS
   (`Options.queue` reports the effective value). The oneMath cuBLAS backend
   returns events that complete before its asynchronous cuBLAS work, so the
