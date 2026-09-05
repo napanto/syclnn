@@ -96,11 +96,16 @@ always reachable (the switch that restores it is given in brackets).
   cost grows with the outstanding commands: an MNIST epoch of 938 batches ran
   8x slower per batch than 64 batches (157 s vs 20 s extrapolated) until the
   depth was bounded (2.3 s with 4). `Options.queue`/`sync_every` report the effective values.
-- DPC++ CUDA backend: the queue is forced in-order whenever oneMath is the BLAS
-  (`Options.queue` reports the effective value). The oneMath cuBLAS backend
-  returns events that complete before its asynchronous cuBLAS work, so the
-  out-of-order dependency graph raced on the GTX 1080 Ti (MNIST accuracy
-  ~50 %); `blas=tiled` keeps the out-of-order queue.
+- DPC++ CUDA backend + oneMath: the runtime honours neither the cross-stream
+  dependencies nor the completion event of oneMath's native-command enqueue
+  (parity suite and MNIST accuracy fail with an out-of-order queue; the
+  cuBLAS workspace setting and the shared handle were ruled out). Two correct
+  configurations: the queue forced in-order on one stream (default, faster)
+  or `Options.blas_queue = "dedicated"`: the BLAS calls on their own in-order
+  queue in the same context, each bracketed by an empty kernel that carries
+  the input dependencies and one whose event dependants wait on; the kernels
+  stay out-of-order (correct, 40-60 % slower on the GTX 1080 Ti). `auto` =
+  `shared`; the effective `queue`/`blas_queue` are reported.
 - USM leak of the asum/nrm2 temporaries in the regularisation penalty (allocated
   per layer per epoch, never freed).
 - Destructor could throw (`wait_and_throw`); it now swallows asynchronous errors.

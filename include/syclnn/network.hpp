@@ -15,6 +15,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <ctime>
@@ -243,14 +244,14 @@ template <typename T> sycl::queue Network<T>::make_queue(const sycl::device &dev
             std::rethrow_exception(e);
     };
 #if !defined(__ADAPTIVECPP__) && !defined(__HIPSYCL__)
-    // DPC++ CUDA backend + oneMath cuBLAS: the events oneMath returns complete when its
-    // host callback returns, before the asynchronous cuBLAS work on the native stream
-    // (the backend was compiled with the host_task fallback), so with an out-of-order
-    // queue the fine-grained dependency graph races (MNIST trains to ~50 % accuracy on
-    // the GTX 1080 Ti, 2026-09-04). An in-order queue serialises everything on one
-    // stream and is correct; the hand-written BLAS does not go through oneMath.
+    // DPC++ CUDA backend + oneMath: the runtime honours neither the cross-stream
+    // dependencies nor the completion event of oneMath's native-command enqueue (parity
+    // suite and MNIST fail with an out-of-order queue, 2026-09-04/05). Two correct
+    // configurations exist: everything in-order on one stream (the faster one, the
+    // default) or Options::blas_queue = "dedicated" (kernels out-of-order, BLAS calls
+    // bracketed on their own in-order queue, 40-60 % slower on the GTX 1080 Ti).
     if (dev.get_backend() == sycl::backend::ext_oneapi_cuda && o.queue != QueueOrder::InOrder &&
-        parse_blas_backend(o.blas) != BlasBackend::Tiled)
+        parse_blas_backend(o.blas) != BlasBackend::Tiled && o.blas_queue != "dedicated")
         o.queue = QueueOrder::InOrder;
 #endif
     // the Intel OpenCL CPU runtime's per-submission cost grows with the number of
@@ -283,6 +284,30 @@ template <typename T> void Network<T>::validate_device() {
         throw std::invalid_argument("syclnn: device '" + device_name() + "' has no 64-bit atomics (loss_reduction=false needs them)");
     m_blas = Blas(parse_blas_backend(m_opts.blas));
     m_blas.check(m_device);
+    // Options::blas_queue = "dedicated": the oneMath calls run on their own in-order queue,
+    // bracketed by marker kernels (see Blas::bracketed); the main queue keeps its order.
+    {
+        bool dedicated = m_opts.blas_queue == "dedicated";
+        if (m_opts.blas_queue == "auto") {
+            dedicated = false; // on the CUDA backend make_queue chose in-order instead (faster, correct)
+        } else if (m_opts.blas_queue != "shared" && m_opts.blas_queue != "dedicated") {
+            throw std::invalid_argument("syclnn: Options::blas_queue must be auto, shared or dedicated");
+        }
+        if (dedicated && m_blas.backend() != BlasBackend::Tiled) {
+            auto handler = [](sycl::exception_list el) {
+                for (auto &e : el)
+                    std::rethrow_exception(e);
+            };
+            if (m_opts.profile)
+                m_blas.attach_queue(sycl::queue(m_queue.get_context(), m_device, handler,
+                                                {sycl::property::queue::enable_profiling{}, sycl::property::queue::in_order{}}));
+            else
+                m_blas.attach_queue(sycl::queue(m_queue.get_context(), m_device, handler, {sycl::property::queue::in_order{}}));
+            m_opts.blas_queue = "dedicated";
+        } else {
+            m_opts.blas_queue = "shared";
+        }
+    }
     m_prof = Profiler(m_opts.profile);
     m_host_scalars = detail::UsmBuffer<double>(2, m_queue, MemoryKind::Host);
     m_host_scalar_t = Buf(1, m_queue, MemoryKind::Host);

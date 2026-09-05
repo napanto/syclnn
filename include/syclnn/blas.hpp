@@ -10,6 +10,7 @@
 #pragma once
 
 #include <stdexcept>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -240,6 +241,10 @@ class Blas {
 
     explicit Blas(BlasBackend b = BlasBackend::Auto) : m_backend(b) {}
     BlasBackend backend() const { return m_backend; }
+    /// Route every oneMath call through `q` (an in-order queue in the same context):
+    /// the events it returns still order the caller's kernels.
+    void attach_queue(sycl::queue q) { m_q = std::move(q); }
+    bool dedicated_queue() const { return m_q.has_value(); }
 
     /// Validate that the backend can serve `dev` (throws std::invalid_argument).
     void check(const sycl::device &dev) const {
@@ -268,6 +273,12 @@ class Blas {
                      const std::vector<sycl::event> &deps = {}) const {
         if (m_backend == BlasBackend::Tiled)
             return handwritten::gemm(q, ta == T_, tb == T_, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc, deps);
+        if (m_q)
+            return bracketed(deps, [&](const std::vector<sycl::event> &d) {
+                return detail::with_backend(m_backend, *m_q, [&](auto sel) {
+                    return oneapi::math::blas::column_major::gemm(sel, ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc, d);
+                });
+            });
         return detail::with_backend(m_backend, q, [&](auto sel) {
             return oneapi::math::blas::column_major::gemm(sel, ta, tb, m, n, k, alpha, a, lda, b, ldb, beta, c, ldc, deps);
         });
@@ -282,6 +293,12 @@ class Blas {
                 throw std::invalid_argument("syclnn: the tiled BLAS supports unit strides only");
             return handwritten::gemv(q, ta == T_, m, n, alpha, a, lda, x, beta, y, deps);
         }
+        if (m_q)
+            return bracketed(deps, [&](const std::vector<sycl::event> &d) {
+                return detail::with_backend(m_backend, *m_q, [&](auto sel) {
+                    return oneapi::math::blas::column_major::gemv(sel, ta, m, n, alpha, a, lda, x, incx, beta, y, incy, d);
+                });
+            });
         return detail::with_backend(m_backend, q, [&](auto sel) {
             return oneapi::math::blas::column_major::gemv(sel, ta, m, n, alpha, a, lda, x, incx, beta, y, incy, deps);
         });
@@ -295,6 +312,12 @@ class Blas {
                 throw std::invalid_argument("syclnn: the tiled BLAS supports unit strides only");
             return handwritten::reduce(q, true, n, x, result, deps);
         }
+        if (m_q)
+            return bracketed(deps, [&](const std::vector<sycl::event> &d) {
+                return detail::with_backend(m_backend, *m_q, [&](auto sel) {
+                    return oneapi::math::blas::column_major::asum(sel, n, x, incx, result, d);
+                });
+            });
         return detail::with_backend(m_backend, q, [&](auto sel) {
             return oneapi::math::blas::column_major::asum(sel, n, x, incx, result, deps);
         });
@@ -308,13 +331,39 @@ class Blas {
                 throw std::invalid_argument("syclnn: the tiled BLAS supports unit strides only");
             return handwritten::reduce(q, false, n, x, result, deps);
         }
+        if (m_q)
+            return bracketed(deps, [&](const std::vector<sycl::event> &d) {
+                return detail::with_backend(m_backend, *m_q, [&](auto sel) {
+                    return oneapi::math::blas::column_major::nrm2(sel, n, x, incx, result, d);
+                });
+            });
         return detail::with_backend(m_backend, q, [&](auto sel) {
             return oneapi::math::blas::column_major::nrm2(sel, n, x, incx, result, deps);
         });
     }
 
+
+    /// Dedicated-queue protocol: the DPC++ CUDA runtime neither honours the cross-stream
+    /// dependencies of oneMath's native-command enqueue nor returns a usable completion
+    /// event for it (2026-09-05), so the call is bracketed by two empty kernels on the
+    /// in-order BLAS queue: the first waits for `deps` (kernel dependencies are honoured),
+    /// stream order places the library call after it, and the second's event, which
+    /// dependants can wait on, completes after the library work.
+    template <typename F> sycl::event bracketed(const std::vector<sycl::event> &deps, F call) const {
+        sycl::event pre = m_q->submit([&](sycl::handler &h) {
+            h.depends_on(deps);
+            h.single_task([] {});
+        });
+        sycl::event mid = call(std::vector<sycl::event>{pre});
+        return m_q->submit([&](sycl::handler &h) {
+            h.depends_on(mid);
+            h.single_task([] {});
+        });
+    }
+
   private:
     BlasBackend m_backend;
+    mutable std::optional<sycl::queue> m_q; ///< dedicated in-order BLAS queue (Options::blas_queue)
 };
 
 } // namespace syclnn
