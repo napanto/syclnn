@@ -222,6 +222,11 @@ template <typename T> class Network {
     sycl::event ev_join(const ev_list &evs);
     void wait_all();
 
+    /// Options::sync_ops: wait for the event (the synchronous execution model)
+    void sync_if(const sycl::event &e) {
+        if (m_opts.sync_ops)
+            m_prof.timed_wait([&] { const_cast<sycl::event &>(e).wait(); });
+    }
     template <typename F> sycl::event launch(std::size_t n, const ev_list &deps, Phase phase, F fn);
 
     sycl::event forward_layer(std::size_t l, const T *in, std::size_t B, const ev_list &deps, sycl::event *gemm_ev);
@@ -342,7 +347,7 @@ Network<T>::Network(std::vector<LayerDescription> layers, T learning_rate, Regul
 
 template <typename T> Network<T>::~Network() noexcept {
     try {
-        m_queue.wait_and_throw();
+        m_blas.wait(); m_queue.wait_and_throw();
     } catch (...) {
         // an asynchronous error must not terminate the process from a destructor
     }
@@ -472,7 +477,7 @@ template <typename T> void Network<T>::d2h_wait(T *dst, const T *src, std::size_
 }
 
 template <typename T> void Network<T>::wait_all() {
-    m_prof.timed_wait([&] { m_queue.wait_and_throw(); });
+    m_prof.timed_wait([&] { m_blas.wait(); m_queue.wait_and_throw(); });
     m_prof.flush();
 }
 
@@ -482,6 +487,7 @@ template <typename T> sycl::event Network<T>::ev_join(const ev_list &evs) {
         h.depends_on(evs);
         h.single_task([] {});
     });
+    sync_if(e);
     m_prof.record(Phase::Other, e);
     return e;
 }
@@ -522,7 +528,7 @@ template <typename T> void Network<T>::ensure_workspace(std::size_t batch) {
         m_prof.timed_wait([&] { sycl::event::wait_and_throw(evs); });
     } catch (...) {
         try {
-            m_queue.wait();
+            m_blas.wait(); m_queue.wait();
         } catch (...) {
         }
         release_workspace();
@@ -703,7 +709,8 @@ sycl::event Network<T>::output_delta_loss(const T *targets, std::size_t B, const
                                    });
                 });
             }
-            m_prof.record(Phase::Loss, e);
+            sync_if(e);
+        m_prof.record(Phase::Loss, e);
             return e;
         }
         // 0.1: every work-item does an atomic add on one scalar of type T
@@ -907,6 +914,7 @@ template <typename T> sycl::event Network<T>::penalty(const ev_list &deps) {
             acc[1] = p;
         });
     });
+    sync_if(e);
     m_prof.record(Phase::Reg, e);
     return e;
 }
@@ -996,9 +1004,11 @@ std::vector<T> Network<T>::train(const std::vector<T> &input_samples, const std:
         // reset the accumulators (the queue is idle here: every epoch ends with a wait)
         ev_fill.clear();
         ev_fill.push_back(m_queue.fill(m_loss_acc_d.data(), 0.0, 2));
+        sync_if(ev_fill.back());
         m_prof.record(Phase::Other, ev_fill.back());
         if (!m_opts.loss_reduction) {
             ev_fill.push_back(m_queue.fill(m_loss_acc_t.data(), T(0), 1));
+            sync_if(ev_fill.back());
             m_prof.record(Phase::Other, ev_fill.back());
         }
         const T *Xsrc = X.data();
@@ -1007,6 +1017,7 @@ std::vector<T> Network<T>::train(const std::vector<T> &input_samples, const std:
         if (m_opts.shuffle) {
             perm_host = detail::shuffle_permutation(static_cast<std::uint32_t>(N), shuffle_rng);
             auto ep = m_queue.memcpy(perm_dev.data(), perm_host.data(), N * sizeof(std::uint32_t), ev_ds);
+            sync_if(ep);
             m_prof.record(Phase::H2D, ep, N * sizeof(std::uint32_t));
             const std::uint32_t *perm = perm_dev.data();
             const T *x0 = X.data();
@@ -1047,6 +1058,7 @@ std::vector<T> Network<T>::train(const std::vector<T> &input_samples, const std:
                     ev_list cdeps = deps0;
                     cdeps.push_back(ev_upd[0]);
                     auto ce = m_queue.memcpy(m_act[0].data(), x_batch, cur * n_in * sizeof(T), cdeps);
+                    sync_if(ce);
                     m_prof.record(Phase::Other, ce);
                     deps0 = {ce};
                     in = m_act[0].data();
@@ -1082,6 +1094,7 @@ std::vector<T> Network<T>::train(const std::vector<T> &input_samples, const std:
                 const T *in = x_batch;
                 if (!direct) {
                     auto ce = m_queue.memcpy(m_act[0].data(), x_batch, cur * n_in * sizeof(T), chain);
+                    sync_if(ce);
                     m_prof.record(Phase::Other, ce);
                     chain = {ce};
                     in = m_act[0].data();
@@ -1109,7 +1122,7 @@ std::vector<T> Network<T>::train(const std::vector<T> &input_samples, const std:
                 chain_next = join(updates);
             }
             if (m_opts.sync_every && (bi + 1) % m_opts.sync_every == 0 && bi + 1 < n_batches)
-                m_prof.timed_wait([&] { m_queue.wait(); }); // bounded outstanding-command depth
+                m_prof.timed_wait([&] { m_blas.wait(); m_queue.wait(); }); // bounded outstanding-command depth
         }
 
         // ---- epoch end: penalty, loss readback, synchronisation ----
@@ -1127,7 +1140,7 @@ std::vector<T> Network<T>::train(const std::vector<T> &input_samples, const std:
             rb_t = m_queue.memcpy(m_host_scalar_t.data(), m_loss_acc_t.data(), sizeof(T), rb_deps);
             m_prof.record(Phase::D2H, rb_t, sizeof(T));
         }
-        m_prof.timed_wait([&] { m_queue.wait_and_throw(); });
+        m_prof.timed_wait([&] { m_blas.wait(); m_queue.wait_and_throw(); });
         m_prof.flush();
         const double data_loss = m_opts.loss_reduction ? m_host_scalars.data()[0] : static_cast<double>(m_host_scalar_t.data()[0]);
         const double total = data_loss / static_cast<double>(N) + (use_reg ? m_host_scalars.data()[1] : 0.0);
@@ -1206,6 +1219,7 @@ std::vector<T> Network<T>::predict(const std::vector<T> &input_samples, unsigned
         const T *in = X.data() + start * n_in;
         if (!m_opts.direct_input) {
             auto ce = m_queue.memcpy(m_act[0].data(), in, cur * n_in * sizeof(T), chain);
+            sync_if(ce);
             m_prof.record(Phase::Other, ce);
             chain = {ce};
             in = m_act[0].data();
@@ -1213,10 +1227,11 @@ std::vector<T> Network<T>::predict(const std::vector<T> &input_samples, unsigned
         for (std::size_t l = 0; l < m_L; ++l)
             chain = {forward_layer(l, (l == 0) ? in : m_act[l].data(), cur, chain, nullptr)};
         last_copy = m_queue.memcpy(out_ptr + start * n_out, m_act[m_L].data(), cur * n_out * sizeof(T), chain);
+        sync_if(last_copy);
         m_prof.record(Phase::D2H, last_copy, cur * n_out * sizeof(T));
         chain = {last_copy}; // the workspace is reused by the next chunk
     }
-    m_prof.timed_wait([&] { m_queue.wait_and_throw(); });
+    m_prof.timed_wait([&] { m_blas.wait(); m_queue.wait_and_throw(); });
     m_prof.flush();
     if (m_opts.pinned_host) {
         const auto t0 = Profiler::clock::now();

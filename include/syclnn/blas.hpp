@@ -245,6 +245,11 @@ class Blas {
     /// the events it returns still order the caller's kernels.
     void attach_queue(sycl::queue q) { m_q = std::move(q); }
     bool dedicated_queue() const { return m_q.has_value(); }
+    /// Drain the dedicated queue (call wherever the main queue is drained).
+    void wait() const {
+        if (m_q)
+            m_q->wait_and_throw();
+    }
 
     /// Validate that the backend can serve `dev` (throws std::invalid_argument).
     void check(const sycl::device &dev) const {

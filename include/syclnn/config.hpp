@@ -137,9 +137,10 @@ struct Options {
     bool persistent_workspace = true;   ///< keep batch temporaries across train()/predict() calls
     bool fast_math = false;             ///< allow the backend's fast-math intrinsics (breaks parity)
     bool sync_ops = false;              ///< wait for every launch (ompnn's synchronous execution model; ablation)
-    std::string blas_queue = "auto";    ///< "shared": BLAS calls on the main queue; "dedicated": on their own in-order
-                                        ///< queue (one native stream, so a vendor handle is never used from two streams
-                                        ///< at once); "auto" = dedicated on the DPC++ CUDA backend, shared elsewhere
+    std::string blas_queue = "auto";    ///< "shared": BLAS calls on the main queue (the DPC++ CUDA backend then runs the
+                                        ///< whole queue in-order, see network.hpp); "dedicated": the BLAS calls on their own
+                                        ///< in-order queue, bracketed by marker kernels, the kernels out-of-order (with
+                                        ///< profile the marker, not the library call, is what gets timed); "auto" = shared
     unsigned sync_every = 0;            ///< wait for the queue every N batches (0 = automatic: 4 on CPU devices, never on GPUs);
                                         ///< bounds the outstanding commands, which the OpenCL CPU runtime handles superlinearly
 };
