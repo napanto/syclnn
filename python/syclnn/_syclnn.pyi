@@ -281,6 +281,7 @@ class Options:
     fast_math: bool
     sync_every: int
     blas_queue: str
+    sync_ops: bool
     fine_deps: bool
     host_adam_correction: bool
     join_kernels: bool

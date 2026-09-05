@@ -136,6 +136,7 @@ struct Options {
     unsigned workgroup_size = 0;        ///< nd_range work-group / CUDA block size for element-wise kernels (0: runtime default)
     bool persistent_workspace = true;   ///< keep batch temporaries across train()/predict() calls
     bool fast_math = false;             ///< allow the backend's fast-math intrinsics (breaks parity)
+    bool sync_ops = false;              ///< wait for every launch (ompnn's synchronous execution model; ablation)
     std::string blas_queue = "auto";    ///< "shared": BLAS calls on the main queue; "dedicated": on their own in-order
                                         ///< queue (one native stream, so a vendor handle is never used from two streams
                                         ///< at once); "auto" = dedicated on the DPC++ CUDA backend, shared elsewhere

@@ -622,6 +622,8 @@ sycl::event Network<T>::launch(std::size_t n, const ev_list &deps, Phase phase, 
         });
     }
     m_prof.record(phase, e);
+    if (m_opts.sync_ops)
+        m_prof.timed_wait([&] { e.wait(); }); // Options::sync_ops: the synchronous execution model
     return e;
 }
 
@@ -634,6 +636,8 @@ sycl::event Network<T>::forward_layer(std::size_t l, const T *in, std::size_t B,
     const T *bias = m_b[l].data();
     sycl::event ge = m_blas.gemm(m_queue, Blas::N, Blas::N, std::int64_t(M), std::int64_t(B), std::int64_t(K), T(1),
                                  m_W[l].data(), std::int64_t(M), in, std::int64_t(K), T(0), net, std::int64_t(M), deps);
+    if (m_opts.sync_ops)
+        m_prof.timed_wait([&] { ge.wait(); });
     m_prof.record(Phase::Gemm, ge);
     if (gemm_ev)
         *gemm_ev = ge;
@@ -733,6 +737,8 @@ template <typename T> sycl::event Network<T>::hidden_delta(std::size_t l, std::s
     sycl::event ge = m_blas.gemm(m_queue, Blas::T_, Blas::N, std::int64_t(M), std::int64_t(B), std::int64_t(K), T(1),
                                  m_W[l + 1].data(), std::int64_t(K), m_delta[l + 1].data(), std::int64_t(K), T(0), delta,
                                  std::int64_t(M), deps);
+    if (m_opts.sync_ops)
+        m_prof.timed_wait([&] { ge.wait(); });
     m_prof.record(Phase::Gemm, ge);
     const std::size_t n = M * B;
     const T *net = m_net[l].data();
@@ -760,11 +766,15 @@ void Network<T>::gradients(std::size_t l, const T *in, std::size_t B, const ev_l
     const T invB = T(1) / static_cast<T>(B);
     ev_w = m_blas.gemm(m_queue, Blas::N, Blas::T_, std::int64_t(M), std::int64_t(N), std::int64_t(B), invB, delta,
                        std::int64_t(M), in, std::int64_t(N), T(0), m_gW[l].data(), std::int64_t(M), deps);
+    if (m_opts.sync_ops)
+        m_prof.timed_wait([&] { ev_w.wait(); });
     m_prof.record(Phase::Gemm, ev_w);
     T *gb = m_gb[l].data();
     if (m_opts.bias_gemv) {
         ev_b = m_blas.gemv(m_queue, Blas::N, std::int64_t(M), std::int64_t(B), invB, delta, std::int64_t(M), m_ones.data(),
                            1, T(0), gb, 1, deps);
+        if (m_opts.sync_ops)
+            m_prof.timed_wait([&] { ev_b.wait(); });
         m_prof.record(Phase::BiasGrad, ev_b);
     } else {
         ev_b = launch(M, deps, Phase::BiasGrad, [=](std::size_t j) {

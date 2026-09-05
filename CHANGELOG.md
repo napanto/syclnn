@@ -91,6 +91,8 @@ always reachable (the switch that restores it is given in brackets).
 
 ### Fixed
 
+- `Options.sync_ops`: wait for every launch and BLAS call (ompnn's synchronous
+  execution model on the same hardware; E3/E6 ablation).
 - `Options.sync_every`: wait for the queue every N batches (0 = automatic: 4 on
   CPU devices, never on GPUs). The Intel OpenCL CPU runtime's per-submission
   cost grows with the outstanding commands: an MNIST epoch of 938 batches ran
