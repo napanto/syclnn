@@ -13,7 +13,7 @@ Accelerated Computing course (University of Pisa); its siblings
 [cudann](https://github.com/napanto/cudann) and [ompnn](https://github.com/napanto/ompnn)
 implement the same API and numerics, and [fnn-bench](https://github.com/napanto/fnn-bench)
 holds the NumPy oracle, the shared parity test-suite and the benchmark harness.
-See `CHANGELOG.md` for what changed since the ML-exam version 0.1.
+See `CHANGELOG.md` for what changed since version 0.1.
 
 ## Quick start
 

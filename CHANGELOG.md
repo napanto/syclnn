@@ -4,7 +4,7 @@ All notable changes to syclnn. The project follows [Semantic Versioning](https:/
 
 ## [0.2.0] - 2026-09
 
-Version 0.2 turns the ML-exam library into the SYCL reference implementation of
+Version 0.2 turns the original course-project library into the SYCL reference implementation of
 the *SYCL vs CUDA vs OpenMP* study (Accelerated Computing project). Every
 behavioural change is behind an `Options` switch so that the benchmark can
 measure it; the default configuration is the optimised one, the 0.1 behaviour is
@@ -122,4 +122,4 @@ always reachable (the switch that restores it is given in brackets).
 
 ## [0.1.0] - 2025-05-19
 
-Initial release for the Machine Learning exam project.
+Initial release (course project).
