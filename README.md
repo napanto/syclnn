@@ -106,7 +106,7 @@ pytest --device gpu --dtype float --blas cublas --option memory=shared
 pytest --device cpu --run-slow          # + MNIST
 ```
 
-Status (2026-09-03): the 117 tests pass in double and float on DPC++
+Status (2026-09-03): the parity suite passes in double and float on DPC++
 (intel/llvm v7.1.0) `opencl:cpu` with MKLCPU and NETLIB/OpenBLAS, on the
 AdaptiveCpp OpenMP host device and on the RX 7900 XTX (AdaptiveCpp + rocBLAS)
 for every ablation switch, except `memory=host` on the AMD GPU (stale reads
