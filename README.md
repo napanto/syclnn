@@ -53,6 +53,23 @@ flattened column-major `(n_out, n_in)` matrices, one array per layer.
 | `pinned_host` | `True` | stage host<->device copies through pinned memory |
 | ablations | | `loss_reduction`, `bias_gemv`, `direct_input`, `fine_deps`, `join_kernels`, `specialized_kernels`, `derivative_from_output`, `host_adam_correction`, `workgroup_size`, `persistent_workspace` (see CHANGELOG) |
 
+## Run the published image
+
+`ghcr.io/napanto/syclnn` is the library installed in the `fnn-sycl` toolchain image (DPC++, the
+Intel OpenCL CPU runtime and oneMath with the MKLCPU, Netlib and cuBLAS backends), built by CI
+from the `Containerfile` on every push. One command, no build:
+
+```sh
+# CPU only (any x86-64 host with a container runtime):
+podman run --rm -it ghcr.io/napanto/syclnn python -c "import syclnn; print(syclnn.devices())"
+# with an NVIDIA GPU (driver >= 525 and the NVIDIA container toolkit's CDI spec on the host):
+podman run --rm -it --device nvidia.com/gpu=all ghcr.io/napanto/syclnn
+```
+
+The image targets `spir64` (any CPU) and `nvidia_gpu_sm_61` + `sm_80`; the AdaptiveCpp and AMD
+builds are made from the `fnn-rocm` / `fnn-acpp-cuda` toolchain images (see `fnn-bench/containers`)
+and are not published as library images.
+
 ## Building
 
 Requirements: a SYCL compiler (open-source [intel/llvm](https://github.com/intel/llvm)
