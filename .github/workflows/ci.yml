@@ -17,6 +17,11 @@ jobs:
         blas: [netlib, mklcpu]
     steps:
       - uses: actions/checkout@v4
+      - name: CUDA driver stub (no GPU on the runner; the image's cuBLAS backend links libcuda.so.1)
+        run: |
+          mkdir -p /tmp/stubs && ln -sf /usr/local/cuda-12.9/lib64/stubs/libcuda.so /tmp/stubs/libcuda.so.1
+          echo "LIBRARY_PATH=/usr/local/cuda-12.9/lib64/stubs" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/tmp/stubs" >> "$GITHUB_ENV"
       - name: build wheel (spir64 + nvidia_gpu_sm_80; the GPU part is compile-only here)
         run: |
           export SYCLNN_TARGETS="spir64;nvidia_gpu_sm_80" SYCLNN_ONEMATH_ROOT=/opt/onemath CMAKE_BUILD_PARALLEL_LEVEL=4
@@ -38,6 +43,11 @@ jobs:
       image: ghcr.io/napanto/fnn-sycl:latest
     steps:
       - uses: actions/checkout@v4
+      - name: CUDA driver stub (no GPU on the runner; the image's cuBLAS backend links libcuda.so.1)
+        run: |
+          mkdir -p /tmp/stubs && ln -sf /usr/local/cuda-12.9/lib64/stubs/libcuda.so /tmp/stubs/libcuda.so.1
+          echo "LIBRARY_PATH=/usr/local/cuda-12.9/lib64/stubs" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/tmp/stubs" >> "$GITHUB_ENV"
       - run: |
           cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++ -DSYCLNN_ONEMATH_ROOT=/opt/onemath -DSYCLNN_BUILD_PYTHON=OFF
           cmake --build build -j4
