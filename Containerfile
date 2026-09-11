@@ -6,6 +6,8 @@
 #   podman run --rm -it --device nvidia.com/gpu=all --security-opt=label=disable syclnn ...
 ARG BASE=ghcr.io/napanto/fnn-sycl:latest
 FROM ${BASE}
+ARG FNN_IMAGE=syclnn:latest
+ARG FNN_IMAGE_BUILT=unknown
 
 ARG SYCLNN_TARGETS="spir64;nvidia_gpu_sm_61;nvidia_gpu_sm_80"
 ARG SYCLNN_ONEMATH_ROOT=/opt/onemath
@@ -16,5 +18,8 @@ RUN pip install --no-cache-dir -v /opt/src/syclnn \
     && pip install --no-cache-dir "fnn-testkit @ git+https://github.com/napanto/fnn-bench#subdirectory=testkit" \
     && python -c "import syclnn; print(syclnn.__version__, syclnn.build_info()); print(syclnn.devices())"
 
+# identity of this image (the base keeps its own stamp in the layer history)
+ENV FNN_IMAGE=${FNN_IMAGE} FNN_IMAGE_BUILT=${FNN_IMAGE_BUILT}
+LABEL org.opencontainers.image.source=https://github.com/napanto/syclnn fnn.image="${FNN_IMAGE}" fnn.image.built="${FNN_IMAGE_BUILT}"
 WORKDIR /opt/src/syclnn
 CMD ["python"]
