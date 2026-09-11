@@ -66,9 +66,17 @@ podman run --rm -it ghcr.io/napanto/syclnn python -c "import syclnn; print(sycln
 podman run --rm -it --device nvidia.com/gpu=all ghcr.io/napanto/syclnn
 ```
 
-The image targets `spir64` (any CPU) and `nvidia_gpu_sm_61` + `sm_80`; the AdaptiveCpp and AMD
-builds are made from the `fnn-rocm` / `fnn-acpp-cuda` toolchain images (see `fnn-bench/containers`)
-and are not published as library images.
+On an AMD GPU (ROCm 7.2 driver on the host) the `acpp-rocm` tag is the AdaptiveCpp build on the
+`fnn-rocm` toolchain image (oneMath with the rocBLAS and Netlib backends; one generic binary that
+also runs on the host CPU as the OpenMP host device):
+
+```sh
+podman run --rm -it --device /dev/kfd --device /dev/dri --group-add keep-groups ghcr.io/napanto/syclnn:acpp-rocm python -c "import syclnn; print(syclnn.devices())"
+```
+
+The `latest` tag targets `spir64` (any CPU) and `nvidia_gpu_sm_61` + `sm_80`. The AMD tag is built
+from the same `Containerfile` on the `fnn-rocm` base by `fnn-bench/scripts/publish-amd-variants.sh`
+(GitHub's runners cannot hold that base), so it is refreshed by hand, not on every push.
 
 ## Building
 
