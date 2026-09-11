@@ -24,7 +24,7 @@ jobs:
           echo "LD_LIBRARY_PATH=/tmp/stubs" >> "$GITHUB_ENV"
       - name: build wheel (spir64 + nvidia_gpu_sm_80; the GPU part is compile-only here)
         run: |
-          export SYCLNN_TARGETS="spir64;nvidia_gpu_sm_80" SYCLNN_ONEMATH_ROOT=/opt/onemath CMAKE_BUILD_PARALLEL_LEVEL=4
+          export CC=clang CXX=clang++ SYCLNN_TARGETS="spir64;nvidia_gpu_sm_80" SYCLNN_ONEMATH_ROOT=/opt/onemath CMAKE_BUILD_PARALLEL_LEVEL=4
           pip install -v .
       - name: install fnn-testkit
         run: pip install "fnn-testkit @ git+https://github.com/napanto/fnn-bench#subdirectory=testkit"
