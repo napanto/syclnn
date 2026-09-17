@@ -14,7 +14,7 @@
 #define SYCLNN_VERSION_MAJOR 0
 #define SYCLNN_VERSION_MINOR 2
 #define SYCLNN_VERSION_PATCH 0
-#define SYCLNN_VERSION_STRING "0.2.0"
+#define SYCLNN_VERSION_STRING "0.2.1"
 
 namespace syclnn {
 
