@@ -50,7 +50,7 @@ flattened column-major `(n_out, n_in)` matrices, one array per layer.
 | `shuffle`, `shuffle_seed` | `False`, `1` | reshuffle samples every epoch (`std::mt19937` Fisher-Yates) |
 | `memory` | `device` | `device` (explicit copies), `shared` (USM shared), `host` (zero-copy) |
 | `queue` | `out_of_order` | `in_order` maps to one in-order queue |
-| `pinned_host` | `True` | stage host<->device copies through pinned memory |
+| `pinned_host` | `False` | stage host<->device copies through pinned memory (faster with AdaptiveCpp, slower at the call level with DPC++) |
 | ablations | | `loss_reduction`, `bias_gemv`, `direct_input`, `fine_deps`, `join_kernels`, `specialized_kernels`, `derivative_from_output`, `host_adam_correction`, `workgroup_size`, `persistent_workspace` (see CHANGELOG) |
 
 ## Run the published image
