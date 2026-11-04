@@ -828,7 +828,7 @@ sycl::event Network<T>::update(std::size_t l, unsigned adam_step, unsigned epoch
     T *mW = m_mW[l].data(), *vW = m_vW[l].data(), *mb = m_mb[l].data(), *vb = m_vb[l].data();
 
     auto step_fn = [=](T &p, T grad, T reg_grad, T &m, T &v) {
-        const T g = grad - reg_grad; // ascent direction of (t - o)
+        const T g = grad - reg_grad; // descent direction of the regularised loss (grad accumulates (t - o))
         T step;
         switch (strategy) {
         case Strategy::Constant:
